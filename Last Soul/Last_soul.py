@@ -14,6 +14,7 @@ JUMP_STRENGTH = -13
 PLAYER_SPEED = 4
 SOUL_SPEED = 3
 SOUL_DURATION = 4  # seconds
+start_menu = True
 
 # --- INIT ---
 pygame.init()
@@ -83,6 +84,31 @@ for i in range(9):
 # --- LEVEL MANAGEMENT ---
 current_level = 1
 MAX_LEVEL = 3
+
+def draw_start_menu():
+    # Background: dark red gradient with subtle waves
+    screen.fill((30, 0, 0))
+    draw_waves(game_time, screen, WIDTH, HEIGHT)  # reuse your waves function for animation
+
+    # Title
+    title = render_text_gradient("LAST SOUL", font, (200, 30, 30), (255, 80, 80))
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//2 - 150))
+
+    # Instructions
+    instr1 = small_font.render("Press ENTER to start", True, (255, 180, 180))
+    screen.blit(instr1, (WIDTH//2 - instr1.get_width()//2, HEIGHT//2))
+
+    instr2 = small_font.render("Press ESC to quit", True, (180, 100, 100))
+    screen.blit(instr2, (WIDTH//2 - instr2.get_width()//2, HEIGHT//2 + 40))
+
+    # Optional tip with pulse effect
+    t = pygame.time.get_ticks() / 1000
+    pulse = 1.0 + 0.05 * math.sin(t * 3)
+    tip = small_font.render("Use DOWN ARROW to transform into your soul", True, (255, 100, 100))
+    tip = pygame.transform.rotozoom(tip, 0, pulse)
+    screen.blit(tip, (WIDTH//2 - tip.get_width()//2, HEIGHT - 80))
+
+
 
 def load_level(level_num):
     global tmx_data, player_x, player_y, mana_objects, door_objects, TILE_WIDTH, TILE_HEIGHT
@@ -633,6 +659,20 @@ while running:
             running=False
 
     keys = pygame.key.get_pressed()
+
+    # --- START MENU ---
+    if start_menu:
+        draw_start_menu()
+        pygame.display.flip()
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_RETURN]:
+            start_menu = False  # start the game
+            event_start_pause = True  # trigger the first pause/intro
+        if keys[pygame.K_ESCAPE]:
+            running = False
+        game_time += 1
+        continue
 
     # --- GAME OVER ---
     if game_over:
