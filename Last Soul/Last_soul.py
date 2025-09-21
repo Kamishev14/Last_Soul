@@ -88,7 +88,7 @@ MAX_LEVEL = 3
 def draw_start_menu():
     # Background: dark red gradient with subtle waves
     screen.fill((30, 0, 0))
-    draw_waves(game_time, screen, WIDTH, HEIGHT)  # reuse your waves function for animation
+    draw_waves(game_time, screen, WIDTH, HEIGHT)
 
     # Title
     title = render_text_gradient("LAST SOUL", font, (200, 30, 30), (255, 80, 80))
@@ -165,6 +165,36 @@ def get_solid_tiles():
                         solid.append(rect)
     return solid
 
+
+# --- YOU WON UI state ---
+you_won = False
+you_won_alpha = 0.0
+YOU_WON_FADE_SPEED = 200.0  # same as game over
+
+def draw_you_won():
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, int(you_won_alpha)))
+    screen.blit(overlay, (0, 0))
+
+    box_w, box_h = 620, 180
+    box_x = (WIDTH - box_w) // 2
+    box_y = (HEIGHT - box_h) // 2
+    pygame.draw.rect(screen, (20, 30, 40), (box_x, box_y, box_w, box_h), border_radius=10)
+    pygame.draw.rect(screen, (50, 120, 255), (box_x+2, box_y+2, box_w-4, box_h-4), 3, border_radius=10)
+
+    t = pygame.time.get_ticks() / 1000.0
+    pulse = 1.0 + 0.07 * math.sin(t * 4.0)
+    title = render_text_gradient("YOU WON!", font, (100, 200, 255), (180, 255, 255))
+    title = pygame.transform.rotozoom(title, 0, pulse)
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, box_y + 20))
+
+    info = small_font.render("Congratulations! Press R to restart or ESC to quit.", True, (220, 220, 220))
+    screen.blit(info, (WIDTH//2 - info.get_width()//2, box_y + 80))
+
+    hint = small_font.render("Restart reloads the first level and clears projectiles.", True, (160, 160, 160))
+    screen.blit(hint, (WIDTH//2 - hint.get_width()//2, box_y + 110))
+
+
 def advance(loc, angle, distance):
     return [loc[0] + math.cos(angle) * distance, loc[1] + math.sin(angle) * distance]
 
@@ -182,8 +212,24 @@ def render_mana(loc, size=[6, 8], color1=(255, 255, 255), color2=(12, 230, 242))
 
 # --- PROJECTILES (ENEMIES) ---
 projectiles = []
-projectile_img = pygame.Surface((14, 14), pygame.SRCALPHA)
-pygame.draw.circle(projectile_img, (255, 60, 60), (7, 7), 7)
+def create_flame_projectile(radius):
+    """Creates a projectile surface with a fiery gradient and slight glow."""
+    surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+    for r in range(radius, 0, -1):
+        # calculate color gradient from white/yellow center to red edge
+        t = r / radius
+        color = (
+            int(255 * t + 255 * (1-t)),     # R: always high
+            int(100 * t + 255 * (1-t)),     # G: fades to yellow
+            int(0 * t),                      # B: always 0
+            int(255 * (1-t))                 # alpha fades outward
+        )
+        pygame.draw.circle(surf, color, (radius, radius), r)
+    return surf
+
+# create projectile image
+projectile_img = create_flame_projectile(7)
+
 
 def spawn_projectile(target_x, target_y, min_dist=180, max_dist=260, speed_base=3.0):
     """Spawn a projectile at a random point around (target_x, target_y).
@@ -519,8 +565,22 @@ def render_mana(loc, size=[6,8], color1=(255,255,255), color2=(12,230,242)):
 
 # --- PROJECTILES ---
 projectiles=[]
-projectile_img = pygame.Surface((14,14),pygame.SRCALPHA)
-pygame.draw.circle(projectile_img,(255,60,60),(7,7),7)
+def create_flame_projectile(radius):
+    """Creates a projectile surface with a fiery gradient and slight glow."""
+    surf = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+    for r in range(radius, 0, -1):
+        t = r / radius
+        color = (
+            int(255),                    # Red
+            int(150 * t),                # Green fades outward
+            0,                            # Blue
+            int(255 * t)                  # Alpha fades outward
+        )
+        pygame.draw.circle(surf, color, (radius, radius), r)
+    return surf
+
+projectile_img = create_flame_projectile(7)
+
 
 def spawn_projectile(target_x,target_y,min_dist=180,max_dist=260,speed_base=3.0):
     angle = random.uniform(0,math.tau)
@@ -643,14 +703,17 @@ def draw_game_over():
 event_start_pause=True
 event_after_first_soul=False
 first_soul_done=False
+thought_active = False
+thought_start_time = 0
+THOUGHT_DURATION = 3.0  # seconds
 
 # --- GAME LOOP ---
 game_time=0
 running=True
 spawn_timer=0.0
-SPAWN_INTERVAL=4.0
-MIN_SPAWN_COUNT=6
-MAX_SPAWN_COUNT=8
+SPAWN_INTERVAL=1.8
+MIN_SPAWN_COUNT=8
+MAX_SPAWN_COUNT=16
 
 while running:
     dt = clock.tick(FPS)/1000.0
@@ -725,12 +788,19 @@ while running:
     dx=dy=0
     if not transforming:
         if is_soul:
-            if keys[pygame.K_a]: dx-=SOUL_SPEED
-            if keys[pygame.K_d]: dx+=SOUL_SPEED
-            if keys[pygame.K_w]: dy-=SOUL_SPEED
-            if keys[pygame.K_s]: dy+=SOUL_SPEED
-            if time.time()-soul_timer>SOUL_DURATION:
-                is_soul=False
+            if keys[pygame.K_a]: dx -= SOUL_SPEED
+            if keys[pygame.K_d]: dx += SOUL_SPEED
+            if keys[pygame.K_w]: dy -= SOUL_SPEED
+            if keys[pygame.K_s]: dy += SOUL_SPEED
+
+            if time.time() - soul_timer > SOUL_DURATION:
+                is_soul = False
+
+                # Trigger thought after first soul ends
+                if first_soul_done and not thought_active:
+                    thought_active = True
+                    thought_start_time = time.time()
+
         else:
             if keys[pygame.K_a]: dx-=PLAYER_SPEED
             if keys[pygame.K_d]: dx+=PLAYER_SPEED
@@ -739,13 +809,20 @@ while running:
                 on_ground=False
             player_vel_y+=GRAVITY
             dy=player_vel_y
-            if keys[pygame.K_DOWN] and mana>0:
-                transforming=True
-                transform_frame=0
-                mana-=1
+            if keys[pygame.K_DOWN] and mana > 0:
+                transforming = True
+                transform_frame = 0
+                mana -= 1
                 if sounds.get("enter_soul"):
-                    try: sounds["enter_soul"].play()
-                    except Exception: pass
+                    try:
+                        sounds["enter_soul"].play()
+                    except Exception:
+                        pass
+
+                # Trigger thought if mana now zero (first transformation used)
+                if mana == 0:
+                    thought_active = True
+                    thought_start_time = time.time()
 
     # --- COLLISIONS ---
     solid_tiles=get_solid_tiles()
@@ -790,14 +867,34 @@ while running:
             except Exception: pass
 
     # --- DOOR ---
-    for door_rect in list(globals().get("door_objects",[])):
+    for door_rect in list(globals().get("door_objects", [])):
         if player_rect.colliderect(door_rect):
-            current_level+=1
-            if current_level>MAX_LEVEL:
-                print("You won the game!")
-                running=False
+            current_level += 1
+            if current_level > MAX_LEVEL:
+                you_won = True  # trigger the "You Won" screen
             else:
                 load_level(current_level)
+
+    # --- YOU WON SCREEN ---
+    if you_won:
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_r]:
+            you_won = False
+            you_won_alpha = 0.0
+            current_level = 1
+            load_level(current_level)
+            projectiles.clear()
+            is_soul = False
+            transforming = False
+            soul_timer = 0
+        if keys[pygame.K_ESCAPE]:
+            running = False
+
+        you_won_alpha = min(255.0, you_won_alpha + YOU_WON_FADE_SPEED * dt)
+        draw_you_won()
+        pygame.display.flip()
+        game_time += 1
+        continue
 
     # --- SPAWN PROJECTILES ---
     spawn_timer+=dt
@@ -861,6 +958,17 @@ while running:
     screen.fill((70,14,43))
     draw_map(camera_x,camera_y)
     draw_waves(game_time,screen,WIDTH,HEIGHT)
+    if thought_active and time.time() - thought_start_time < THOUGHT_DURATION:
+        thought_msg = render_text_gradient(
+            "I need mana to do that again",
+            small_font,
+            (0, 180, 255),  # top of blue flame
+            (180, 255, 255)  # bottom of blue flame
+        )
+        screen.blit(thought_msg, (WIDTH // 2 - thought_msg.get_width() // 2, HEIGHT // 2 - 100))
+    else:
+        thought_active = False
+
     for mana_rect in globals().get("mana_objects",[]):
         render_mana([mana_rect.centerx-camera_x,mana_rect.centery-camera_y])
     for proj in projectiles:
